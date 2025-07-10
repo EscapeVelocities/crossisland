@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Singapore Carpark Availability (LTA)</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple animation for the loading spinner */
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        .spinner {
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 max-w-2xl">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+            <header class="text-center mb-6">
+                <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">Singapore Carpark Availability</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-1">Search for a carpark by its ID.</p>
+            </header>
+
+            <!-- Search Bar -->
+            <div class="flex flex-col sm:flex-row gap-3 mb-6">
+                <input type="text" id="searchInput" placeholder="e.g., HE12, C32, T18" class="flex-grow w-full px-4 py-3 bg-gray-100 dark:bg-gray-700 border-2 border-transparent focus:border-blue-500 dark:focus:border-blue-500 rounded-lg outline-none transition-all duration-300">
+                <button id="searchButton" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-300">
+                    Search
+                </button>
+            </div>
+
+            <!-- Status and Last Updated Time -->
+            <div id="status" class="text-center text-sm text-gray-500 dark:text-gray-400 mb-6 h-10 flex items-center justify-center">
+                <div id="loadingIndicator" class="flex items-center gap-2">
+                     <div class="spinner w-5 h-5 border-4 border-gray-200 dark:border-gray-600 rounded-full"></div>
+                     <span>Fetching latest data from LTA...</span>
+                </div>
+            </div>
+
+            <!-- Results Display -->
+            <div id="results" class="bg-gray-50 dark:bg-gray-700/50 p-6 rounded-lg min-h-[150px] flex items-center justify-center">
+                <p class="text-gray-500 dark:text-gray-400">Enter a carpark ID and click search to see results.</p>
+            </div>
+        </div>
+        <footer class="text-center mt-6 text-xs text-gray-400 dark:text-gray-500">
+            <p>Powered by <a href="https://datamall.lta.gov.sg" target="_blank" class="underline hover:text-blue-500">LTA DataMall</a>.</p>
+        </footer>
+    </div>
+
+    <script>
+        // --- DOM Element References ---
+        const searchInput = document.getElementById('searchInput');
+        const searchButton = document.getElementById('searchButton');
+        const resultsDiv = document.getElementById('results');
+        const statusDiv = document.getElementById('status');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+
+        // --- Client-Side Data Storage ---
+        let carparkDataStore = [];
+
+        // --- API Endpoint and Key ---
+        // *** REMOVED PROXY: Calling the API directly as requested. ***
+        const LTA_API_URL = 'https://datamall2.mytransport.sg/ltaodataservice/CarParkAvailabilityv2';
+        const LTA_ACCOUNT_KEY = 'l3llSpRRRFmjRH5XwksEng==';
+
+        /**
+         * Fetches carpark availability data from the LTA API.
+         */
+        async function fetchCarparkData() {
+            console.log('Fetching data from LTA Data Mall...');
+            loadingIndicator.style.display = 'flex';
+
+            try {
+                const myHeaders = new Headers();
+                myHeaders.append("AccountKey", LTA_ACCOUNT_KEY);
+
+                const requestOptions = {
+                  method: "GET",
+                  headers: myHeaders,
+                  redirect: "follow"
+                };
+
+                const response = await fetch(LTA_API_URL, requestOptions);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                const data = await response.json();
+
+                if (data && data.value) {
+                    // Map LTA fields to a consistent structure and store it
+                     carparkDataStore = data.value
+                        .filter(carpark => carpark.LotType === 'C') // Filter for Cars only
+                        .map(carpark => ({
+                            carpark_number: carpark.CarParkID,
+                            development_name: carpark.Development,
+                            lots_available: carpark.AvailableLots,
+                            agency: carpark.Agency
+                        }));
+                    console.log(`Successfully stored ${carparkDataStore.length} carpark records.`);
+                    updateStatusTimestamp();
+                } else {
+                    throw new Error('LTA API response format is invalid.');
+                }
+
+            } catch (error) {
+                console.error("Failed to fetch carpark data:", error);
+                statusDiv.textContent = `Error: Could not retrieve data. ${error.message}`;
+            } finally {
+                loadingIndicator.style.display = 'none';
+            }
+        }
+
+        /**
+         * Updates the status message with the current timestamp.
+         */
+        function updateStatusTimestamp() {
+            const date = new Date();
+            const formattedTime = date.toLocaleTimeString('en-SG', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            });
+            statusDiv.textContent = `Last updated: ${formattedTime}`;
+        }
+
+        /**
+         * Searches the client-side data store for a specific carpark.
+         */
+        function searchCarpark() {
+            const query = searchInput.value.trim().toUpperCase();
+
+            if (!query) {
+                resultsDiv.innerHTML = `<p class="text-gray-500 dark:text-gray-400">Please enter a carpark ID to search.</p>`;
+                return;
+            }
+            
+            if (carparkDataStore.length === 0) {
+                resultsDiv.innerHTML = `<p class="text-yellow-500">Data is still being fetched. Please try again in a moment.</p>`;
+                return;
+            }
+
+            const result = carparkDataStore.find(carpark => carpark.carpark_number === query);
+            displayResults(result);
+        }
+
+        /**
+         * Renders the search result in the results div.
+         */
+        function displayResults(carpark) {
+            if (carpark) {
+                const availableLots = parseInt(carpark.lots_available, 10);
+                
+                let availabilityColorClass = 'text-green-500';
+                if (availableLots < 10) {
+                    availabilityColorClass = 'text-red-500';
+                } else if (availableLots < 50) {
+                    availabilityColorClass = 'text-yellow-500';
+                }
+
+                resultsDiv.innerHTML = `
+                    <div class="text-center w-full">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white mb-2">${carpark.development_name}</h2>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">(Carpark ID: ${carpark.carpark_number})</p>
+                        <p class="text-4xl font-bold ${availabilityColorClass}">${availableLots}</p>
+                        <p class="text-gray-500 dark:text-gray-400">Available Lots</p>
+                    </div>
+                `;
+            } else {
+                const query = searchInput.value.trim().toUpperCase();
+                resultsDiv.innerHTML = `
+                    <div class="text-center w-full">
+                        <h2 class="text-xl font-bold text-red-500">Not Found</h2>
+                        <p class="text-gray-500 dark:text-gray-400">Could not find carpark with ID "${query}".</p>
+                    </div>
+                `;
+            }
+        }
+
+        // --- Event Listeners ---
+        searchButton.addEventListener('click', searchCarpark);
+        
+        searchInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                searchCarpark();
+            }
+        });
+
+        // --- Initial Load and Interval ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchCarparkData();
+            setInterval(fetchCarparkData, 60000); // Refresh every 60 seconds
+        });
+    </script>
+
+</body>
+</html>
